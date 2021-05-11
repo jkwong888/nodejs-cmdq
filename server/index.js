@@ -1,5 +1,6 @@
 const https = require('https');
 const express = require('express');
+const cors = require('cors');
 const bodyParser = require('body-parser');
 const {PubSub} = require('@google-cloud/pubsub');
 const { v4: uuidv4 } = require('uuid');
@@ -67,6 +68,10 @@ const app = express();
 const server = require('http').createServer(app);
 
 app.use(express.json());
+const corsOptions = {
+  exposedHeaders: 'Location',
+};
+app.use(cors(corsOptions));
 
 // Creates a pubsub client; cache this for further use
 const pubSubClient = new PubSub({
