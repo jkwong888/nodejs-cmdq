@@ -9,10 +9,11 @@ const PUBSUB_API_ENDPOINT = process.env.PUBSUB_API_ENDPOINT || "us-central1-pubs
 const PUBSUB_PROJECT_ID = process.env.PROJECT_ID || "jkwng-pubsub-cmdq"
 const PUBSUB_SUBSCRIPTION_NAME = process.env.SUBSCRIPTION_NAME || "cmdq-sub"
 
-
 const keys = require(process.env.GOOGLE_APPLICATION_CREDENTIALS ||  null);
 const SERVICE_ACCOUNT_EMAIL = keys.client_email || null;
 const SCOPES = 'https://www.googleapis.com/auth/iam'
+
+const HEARTBEAT_URL = process.env.HEARTBEAT_URL || "localhost:3000/api/agent/heartbeat";
 
 // Creates a pubsub client; cache this for further use
 const pubSubClient = new PubSub({
@@ -122,6 +123,33 @@ const messageHandler = async message => {
     req.end();
 
 }
+
+async function heartbeat() {
+  console.log(`Heartbeat to: ${HEARTBEAT_URL}`)
+  const accessToken = await generateAccessToken(HEARTBEAT_URL);
+  const myURL = new URL(HEARTBEAT_URL);
+
+  const options = {
+    hostname: myURL.host,
+    port: myURL.port,
+    path: myURL.pathname,
+    protocol: myURL.protocol,
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+    },
+  }
+
+  const req = https.request(options, res => {
+    console.log(`statusCode: ${res.statusCode}`);
+  });
+
+  req.end();
+
+}
+
+// heartbeat every 15 seconds
+setInterval(heartbeat, 15000);
 
 getSubscription().then((subscription => {
   listenForMessages(subscription);

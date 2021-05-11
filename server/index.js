@@ -179,6 +179,11 @@ app.get('/api/results/:cmdId', async (req, res) => {
 async function authenticateAgent(req, res, next) {
   const authHeader = req.headers.authorization;
 
+  if (authHeader == null) {
+    // no authentication
+    return res.status(403).send();
+  }
+
   if (!authHeader.toLowerCase().startsWith('bearer ')) {
     // we don't support basic auth
     return res.status(403).send();
@@ -239,6 +244,69 @@ async function authenticateAgent(req, res, next) {
 
   next();
 }
+
+// from the client - list of all active agents
+app.get('/api/agent', async (req, res) => {
+  var index = 0;
+  var agentlist = []
+
+  do {
+    var results = await redisClient.scanAsync(index,
+      "match",
+      "agent_heartbeat:*"
+    )
+
+    //console.log(JSON.stringify(results));
+
+    results[1].forEach((value) => {
+      agentlist.push(value.split(":")[1]);
+    })
+
+    index = parseInt(results[0]);
+  } while (index != 0);
+
+  res.send(agentlist);
+
+});
+
+// from the agent - heartbeat
+app.post('/api/agent/heartbeat', authenticateAgent, async (req, res) => {
+  req.accepts('application/json');
+
+  // check the caller and make sure they're authorized to post the results
+  const authHeader = req.headers.authorization;
+  const authToken = authHeader.split(" ")[1];
+
+  // validate the agent email
+  var jwt = kjur.KJUR.jws.JWS.parse(authToken);
+  const agent_email = jwt.payloadObj['email'];
+
+  console.log(`Received heartbeat from agent ${agent_email}`);
+
+  // save a redis key of all agents ( move this to another datastore ?)
+  await redisClient.setAsync(
+    `agent_status:${agent_email}`,
+    JSON.stringify({
+      agentId: agent_email,
+      method: "http",
+      lastSeen: Date.now(),
+    }),
+  );
+
+  // save a redis key that expires in 30 seconds that holds last heartbeat
+  await redisClient.setAsync(
+    `agent_heartbeat:${agent_email}`,
+    JSON.stringify({
+      agentId: agent_email,
+      method: "http",
+      lastSeen: Date.now(),
+    }),
+    "EX",
+    30,
+  );
+
+  res.status(200).send();
+});
 
 // from the agent - report the cmd results
 app.post('/api/results/:cmdId', authenticateAgent, async (req, res) => {
