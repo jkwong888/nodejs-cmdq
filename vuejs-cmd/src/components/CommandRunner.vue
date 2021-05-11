@@ -43,7 +43,7 @@
             text: 'ID',
             align: 'start',
             sortable: false,
-            value: 'name',
+            value: 'i',
           },
           { text: 'Name', value: 'name' },
           { text: 'Email', value: 'email' },
