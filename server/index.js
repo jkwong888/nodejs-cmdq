@@ -1,7 +1,6 @@
 const https = require('https');
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
 const {PubSub} = require('@google-cloud/pubsub');
 const { v4: uuidv4 } = require('uuid');
 const redis = require('redis');
@@ -12,7 +11,8 @@ const port = process.env.PORT || 3000;
 const MY_URL = process.env.MY_URL || "http://localhost:3000"
 const PUBSUB_API_ENDPOINT = process.env.PUBSUB_API_ENDPOINT || "us-central1-pubsub.googleapis.com:443"
 const PUBSUB_PROJECT_ID = process.env.PROJECT_ID || "jkwng-pubsub-cmdq"
-const PUBSUB_TOPIC_NAME = process.env.TOPIC_NAME || "cmdq"
+const PUBSUB_TOPIC_NAME = process.env.PUBSUB_CMD_TOPIC_NAME || "cmdq"
+const PUBSUB_HEARTBEAT_SUB = process.env.PUBSUB_HEARTBEAT_SUB || "agent-heartbeat-sub";
 
 const REDIS_HOST = process.env.REDISHOST || 'localhost';
 const REDIS_PORT = process.env.REDISPORT || 6379;
@@ -88,22 +88,20 @@ redisClient.on("error", function(error) {
   console.error("REDIS ERROR", error);
 });
 
-async function publishMessage(data) {
-
-  console.log(data);
+async function publishMessage(targetAgent, data) {
+  //console.log(data);
   // Publishes the message as a string, e.g. "Hello, world!" or JSON.stringify(someObject)
   const dataBuffer = Buffer.from(data);
 
-  // Be sure to set an ordering key that matches other messages
-  // you want to receive in order, relative to each other.
-  const message = {
-    data: dataBuffer,
-  };
+  // set an attribute for the agent, filter this in the subscription per agent
+  const messageAttributes = {
+    agent: targetAgent,
+  }
 
   // Publishes the message
   const messageId = await pubSubClient
     .topic(PUBSUB_TOPIC_NAME)
-    .publishMessage(message);
+    .publish(dataBuffer, messageAttributes);
 
   console.log(`Message ${messageId} published.`);
 
@@ -138,8 +136,8 @@ app.post('/api/cmd', async (req, res) => {
     60*60, // expire in 1 hour
   );
 
-  // TODO: publish the message on pubsub to the right queue
-  await publishMessage(JSON.stringify({
+  //  publish the message on pubsub to the right queue
+  await publishMessage(targetAgent, JSON.stringify({
     cmdId: uuid,
     reqBody: req.body,
     resultUrl: `${MY_URL}/api/results/${uuid}`,
@@ -269,6 +267,33 @@ app.get('/api/agent', async (req, res) => {
 
 });
 
+async function handleHeartbeat(agent) {
+  console.log(`Received heartbeat from agent ${agent}`);
+
+  // save a redis key of all agents ( move this to another datastore ?)
+  await redisClient.setAsync(
+    `agent_status:${agent}`,
+    JSON.stringify({
+      agentId: agent,
+      method: "http",
+      lastSeen: Date.now(),
+    }),
+  );
+
+  // save a redis key that expires in 30 seconds that holds last heartbeat
+  await redisClient.setAsync(
+    `agent_heartbeat:${agent}`,
+    JSON.stringify({
+      agentId: agent,
+      method: "http",
+      lastSeen: Date.now(),
+    }),
+    "EX",
+    30,
+  );
+
+}
+
 // from the agent - heartbeat
 app.post('/api/agent/heartbeat', authenticateAgent, async (req, res) => {
   req.accepts('application/json');
@@ -281,29 +306,7 @@ app.post('/api/agent/heartbeat', authenticateAgent, async (req, res) => {
   var jwt = kjur.KJUR.jws.JWS.parse(authToken);
   const agent_email = jwt.payloadObj['email'];
 
-  console.log(`Received heartbeat from agent ${agent_email}`);
-
-  // save a redis key of all agents ( move this to another datastore ?)
-  await redisClient.setAsync(
-    `agent_status:${agent_email}`,
-    JSON.stringify({
-      agentId: agent_email,
-      method: "http",
-      lastSeen: Date.now(),
-    }),
-  );
-
-  // save a redis key that expires in 30 seconds that holds last heartbeat
-  await redisClient.setAsync(
-    `agent_heartbeat:${agent_email}`,
-    JSON.stringify({
-      agentId: agent_email,
-      method: "http",
-      lastSeen: Date.now(),
-    }),
-    "EX",
-    30,
-  );
+  handleHeartbeat(agent_email.split('@')[0])
 
   res.status(200).send();
 });
@@ -317,7 +320,7 @@ app.post('/api/results/:cmdId', authenticateAgent, async (req, res) => {
 
   // validate the agent that posted the response is the same one that we expect
   var jwt = kjur.KJUR.jws.JWS.parse(authToken);
-  const agent_email = jwt.payloadObj['email'];
+  const agent_email = jwt.payloadObj['email'].split('@')[0];
 
   console.log(`Response from agent ${agent_email}: ${JSON.stringify(req.body)}`);
 
@@ -361,9 +364,32 @@ app.post('/api/results/:cmdId', authenticateAgent, async (req, res) => {
   return res.status(201).send();
 });
 
+async function getSubscription(subscriptionName) {
+  console.log(`Listening for messages on subscription: ${subscriptionName}`);
+  // Gets the metadata for the subscription
+  const subscription = await pubSubClient
+    .subscription(subscriptionName)
+
+  return subscription;
+}
+
+async function listenForMessages(subscription) {
+  // Listen for new messages indefinitely
+  subscription.on('message', function(message) {
+    heartbeatMsg = JSON.parse(message.data);
+
+    handleHeartbeat(heartbeatMsg.agent);
+    message.ack();
+  });
+}
+
+getSubscription(PUBSUB_HEARTBEAT_SUB).then((subscription => {
+  listenForMessages(subscription);
+}));
     
 server.listen(port, () => {
   fetchGoogleOIDCConf();
   console.log('Server listening at port %d', port);
-  console.log(`Agents post responses to: ${MY_URL}`);
 });
+
+console.log(`Agents post responses to: ${MY_URL}`);
