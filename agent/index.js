@@ -5,7 +5,7 @@ const faker = require('faker');
 const { URL } = require('url');
 
 const PUBSUB_API_ENDPOINT = process.env.PUBSUB_API_ENDPOINT || "us-central1-pubsub.googleapis.com:443"
-const PUBSUB_PROJECT_ID = process.env.PROJECT_ID || "jkwng-pubsub-cmdq"
+const PUBSUB_PROJECT_ID = process.env.PROJECT_ID || "my-project"
 const PUBSUB_CMD_SUB = process.env.PUBSUB_CMD_SUB || "cmdq-sub"
 const PUBSUB_HEARTBEAT_TOPIC = process.env.PUBSUB_HEARTBEAT_TOPIC || "agent-heartbeat";
 const HEARTBEAT_URL = process.env.HEARTBEAT_URL || "localhost:3000/api/agent/heartbeat";

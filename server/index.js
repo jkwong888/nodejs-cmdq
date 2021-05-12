@@ -10,7 +10,7 @@ const kjur = require('jsrsasign');
 const port = process.env.PORT || 3000;
 const MY_URL = process.env.MY_URL || "http://localhost:3000"
 const PUBSUB_API_ENDPOINT = process.env.PUBSUB_API_ENDPOINT || "us-central1-pubsub.googleapis.com:443"
-const PUBSUB_PROJECT_ID = process.env.PROJECT_ID || "jkwng-pubsub-cmdq"
+const PUBSUB_PROJECT_ID = process.env.PROJECT_ID || "my-project"
 const PUBSUB_TOPIC_NAME = process.env.PUBSUB_CMD_TOPIC_NAME || "cmdq"
 const PUBSUB_HEARTBEAT_SUB = process.env.PUBSUB_HEARTBEAT_SUB || "agent-heartbeat-sub";
 
